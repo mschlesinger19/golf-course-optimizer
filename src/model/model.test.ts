@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_BAG } from '../data/clubs';
 import { DEMO_HOLE } from '../data/demoHole';
-import { makeNoiseBank, sampleShotCloud } from './dispersion';
+import { makeNoiseBank, patternShape, sampleShotCloud } from './dispersion';
 import { DEFAULT_COST_CONFIG, expectedStrokes } from './expectedStrokes';
 import { angleBetweenDeg, compileHole, direction, resolveLie, rotateDeg } from './geometry';
 import { optimizeClub, optimizeShot } from './optimizer';
@@ -80,14 +80,71 @@ describe('dispersion', () => {
   it('reproduces the requested moments for the normal component', () => {
     const club = { ...DEFAULT_BAG[0], mishitWeight: 0 };
     const cloud = sampleShotCloud(club, makeNoiseBank(40000));
+    let radiusSum = 0;
     let carrySum = 0;
     let latSum = 0;
     for (let i = 0; i < cloud.n; i++) {
+      radiusSum += cloud.radius[i];
       carrySum += cloud.carry[i];
       latSum += cloud.lateral[i];
     }
-    expect(carrySum / cloud.n).toBeCloseTo(club.meanCarry, 0);
+    // The club's carry is the distance the ball travels, which is the radius.
+    expect(radiusSum / cloud.n).toBeCloseTo(club.meanCarry, 0);
     expect(latSum / cloud.n).toBeCloseTo(club.lateralBiasPct * club.meanCarry, 0);
+
+    // The component *along the aim line* is shorter than the carry, because
+    // an offline shot spends part of its distance sideways. Small, but real,
+    // and a consequence of dispersion being angular rather than rectangular.
+    const meanAlong = carrySum / cloud.n;
+    expect(meanAlong).toBeLessThan(club.meanCarry);
+    expect(meanAlong).toBeGreaterThan(club.meanCarry - 2);
+  });
+
+  it('spreads proportionally with the distance hit, not as a fixed offset', () => {
+    // The defining property of an angular cone: halve the carry and the
+    // sideways spread halves too.
+    const noise = makeNoiseBank(40000);
+    const long = sampleShotCloud({ ...DEFAULT_BAG[0], mishitWeight: 0 }, noise);
+    const short = sampleShotCloud(
+      { ...DEFAULT_BAG[0], meanCarry: DEFAULT_BAG[0].meanCarry / 2, mishitWeight: 0 },
+      noise,
+    );
+    const sd = (a: Float64Array) => {
+      let m = 0;
+      for (let i = 0; i < a.length; i++) m += a[i];
+      m /= a.length;
+      let v = 0;
+      for (let i = 0; i < a.length; i++) v += (a[i] - m) ** 2;
+      return Math.sqrt(v / a.length);
+    };
+    expect(sd(short.lateral)).toBeCloseTo(sd(long.lateral) / 2, 0);
+  });
+
+  it('describes the cloud with a wedge that bounds its own scatter', () => {
+    const cloud = sampleShotCloud(DEFAULT_BAG[0], makeNoiseBank(20000));
+    const shape = patternShape(cloud, 1.5);
+    // The mean radius sits *below* the club's carry, because the mishit
+    // component carries short: (1-w)·carry + w·carry·mishitCarryMult. This is
+    // the same effect that makes the map label read less than the target, and
+    // it is why that label says "avg".
+    const club = DEFAULT_BAG[0];
+    const mixtureMean =
+      (1 - club.mishitWeight) * club.meanCarry +
+      club.mishitWeight * club.meanCarry * club.mishitCarryMult;
+    expect(shape.meanRadius).toBeCloseTo(mixtureMean, 0);
+    expect(shape.meanRadius).toBeLessThan(club.meanCarry);
+    expect(shape.widthYards).toBeGreaterThan(0);
+    // Roughly 87% of samples should fall inside a 1.5-sigma band on each axis.
+    let inside = 0;
+    for (let i = 0; i < cloud.n; i++) {
+      if (
+        Math.abs(cloud.angle[i] - shape.meanAngle) <= 1.5 * shape.sdAngle &&
+        Math.abs(cloud.radius[i] - shape.meanRadius) <= 1.5 * shape.sdRadius
+      ) {
+        inside++;
+      }
+    }
+    expect(inside / cloud.n).toBeGreaterThan(0.6);
   });
 
   it('fattens the tail when the mishit component is switched on', () => {

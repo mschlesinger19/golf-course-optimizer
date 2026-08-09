@@ -1,24 +1,137 @@
-# Golf course optimizer — aim optimizer slice
+# Golf course optimizer
 
-A vertical slice through the [spec](docs/spec.md): one hardcoded hole, a Monte Carlo aim
-optimizer, and a comparison UI. It exists to answer one question before any of the
-modelling machinery gets built —
-
-> **Does the aim recommendation ever tell you something you don't already know?**
-
-Everything else in the spec's build order is deferred until that question has an answer.
+Three pages. **Play** is the app: drag a crosshair anywhere on the hole and it prices the
+target. **Trace** draws the course geometry underneath it. **Lab** is the parameter sweep
+that decides how much any of the modelling is worth.
 
 ```bash
 npm install
 npm run dev          # the app
-npm test             # 18 model tests, no browser needed
+npm test             # 50 model tests, no browser needed
 npx vite-node scripts/inspect.ts      # what the optimizer says about the demo hole
 npx vite-node scripts/sensitivity.ts  # how much the answer moves when the inputs move
 ```
 
+Everything is local-first: courses live in `localStorage`, nothing calls a server, and the
+model runs on-device. Spec §2 makes that non-negotiable — cell coverage on courses is
+unreliable and the app is useless if it cannot compute an aim point without signal. The
+only network dependency is satellite imagery, and losing it degrades the picture, not the
+numbers.
+
 ---
 
-## What it found
+## Play — the two-layer crosshair
+
+Drag the crosshair (or tap the map) and you get two numbers, deliberately side by side:
+
+| layer | what it is | needs dispersion? |
+|---|---|---|
+| **if you hit it exactly here** | `E(strokes)` at the target, versus the baseline where you stand | no |
+| **realistic** | the same thing averaged over your miss pattern at that distance | yes |
+
+The first layer is a lookup and answers *what is this spot worth*. It is honest and it is
+free. What it cannot do is tell you where to aim, because it prices every target as though
+you hit it perfectly — so the pin always wins.
+
+The gap between the two layers is the whole argument. On the demo hole, dragging to the pin
+from the tee reads **+2.45** perfect and **+0.35** realistic: a two-stroke divergence, and
+the realistic column shows 23% trees against 13% green. That gap is the cost of your miss
+pattern, and the app calls it out explicitly whenever it exceeds 0.15 strokes.
+
+Dispersion is not optional if the app answers "where should I aim." But per the sweep below
+it can be *crude* — the recommendation survived a 4× error in it.
+
+### Dispersion is angular
+
+The miss pattern is a cone from the ball, not a rectangle around the aim line. A 2° push is
+3.5 yards offline at 100 yards and 8.7 at 250, so the band of equal distance is an **arc**
+struck from the ball — which is why the width marker on the map bows away from you, and why
+it widens as you go up the bag. At a fixed 207-yard target the wedge measures 59 yards wide
+for a driver and 38 for a 6-iron.
+
+The alternative — sampling a fixed perpendicular offset scaled by the club's mean carry —
+gives an ellipse with a flat far edge, and puts the full sideways spread on a strike that
+travelled 40 yards less. Wrong in exactly the place it matters: the mishits that decide
+whether to bail out. It is also the plainer reading of spec §4.1, where σ is stored as a
+fraction of carry — the carry each shot actually had, not the club's average.
+
+One visible consequence: the wedge label reads *less* than the target distance ("206 yd avg"
+against a 211-yard target). That is not an arithmetic slip. The mishit component carries
+short, so the mean distance the ball travels sits inside the target.
+
+### Guards
+
+A target inside water or OB is priced as taking the penalty rather than as a free lie, and
+dragging beyond the longest club in the bag raises a warning instead of quietly simulating a
+shot nobody can hit.
+
+## Trace — geometry
+
+Per-hole workflow from spec §9: set tee, green centre and pin, draw the centreline, then
+click out polygons from a palette. Rough is deliberately not in the palette — spec §3.1
+makes it implicit, so anything untraced resolves to rough and tracing it is wasted work.
+Each polygon carries the `penalty_modifier` local-knowledge field, because a flat fairway
+bunker and a lipped-out greenside bunker are both `bunker` and differ by most of a stroke.
+
+Courses export and import as JSON. KML (spec §9) is not built yet.
+
+Imagery defaults to **NAIP** — public domain, no attribution requirement, no restriction on
+deriving data, ~60cm, which resolves bunker edges and green perimeters cleanly. USGS and
+Esri are selectable because NAIP is CONUS-only and refreshes on a multi-year cycle; spec §9
+warns that a flyover predating a renovation produces confidently wrong polygons, so the
+course record carries an imagery-vintage note.
+
+## Bag — where the numbers come from
+
+Two sources, in priority order.
+
+**Logged shots.** Every shot is stored as two dimensionless numbers: the ratio of actual to
+intended distance, and the offline angle. Dimensionless is what lets a shot logged at 150
+yards inform the pattern drawn at 200 — the same assumption spec §4.1 makes for σ, applied
+to observations instead of parameters. The Play page then bootstraps that pool directly
+rather than fitting anything to it.
+
+This is what eventually retires most of spec §4.2. Hierarchical shrinkage exists to squeeze
+a shape out of very few observations; once the observations are stored, the pattern *is* the
+data. Family pooling stops being a shrinkage formula and becomes list concatenation — a
+5-wood with no shots of its own borrows the 3-wood's, at a third weight.
+
+The split between logged shots and the prior is §4.2's `n/(n+k)` with k=12, applied per
+Monte Carlo sample rather than per parameter. So the pattern takes the *shape* of real shots
+as soon as any exist, instead of being averaged into a Gaussian that never had that shape.
+At 14 logged shots the readout says "54% from your logged shots" — which is 14/(14+12).
+
+**The questionnaire**, until then. Spec §5: never ask for a σ or an average, because golfers
+report their best shot as their average. Ask for counts and directions and infer the rest.
+
+| answer | infers |
+|---|---|
+| fairways hit out of 14 | driver lateral σ, by inverting a hit rate through a fairway-width strip |
+| greens in regulation | iron σ, via a Rayleigh radius on a circular green |
+| penalty strokes per round | mishit weight — spec §5 notes this is otherwise unrecoverable |
+| one-way or two-way miss | signed bias, or none |
+| flush vs thin 7-iron gap | longitudinal σ, treating the gap as the 10th–90th percentile |
+| stated carries | mean carry, after knocking the stated figure down from a 75th percentile |
+
+**The answers are yours; the mapping is mine.** Every constant in it — fairway half-width,
+green radius, what fraction of mishits become penalties — is a modelling assumption, not a
+citation. They are gathered as a single exported `ASSUMPTIONS` object in
+`questionnaire.ts` so they can be argued with or replaced, and the Bag page prints the full
+derivation of every number it produced.
+
+That is still a real improvement on what came before: the previous bag was invented outright.
+It also sidesteps spec §12 open #3 — no published handicap-band prior is needed if the player
+reports their own fairway rate.
+
+## Lab — the sweep
+
+The original vertical slice: full aim-angle optimisation over a hardcoded hole, with every
+dispersion parameter on a slider.
+
+---
+
+## What the sweep found
+
 
 On the demo hole — dogleg right, pond exactly where a straight driver finishes, bunker in
 the lay-up zone — with a mid-handicap bag:
@@ -83,11 +196,16 @@ Per the spec's own framing of this slice:
   rough. This is the shape the tracer needs to emit.
 - `src/model/dispersion.ts` — the 2D mixture sampler and the shared noise bank.
 - The comparison UI — expected-strokes deltas, outcome shares, the cost-by-angle curve.
+- `src/model/projection.ts` and `src/model/course.ts` — lat/lng traced geometry, projected
+  into the optimizer's flat-yard frame about the tee. Accurate to centimetres over a hole,
+  which is far below the noise floor of everything else here.
+- `src/pages/Trace.tsx` — the tracer, which spec §9 calls the primary geometry path.
 
 **Throwaway:**
 
 - `src/data/demoHole.ts` — invented coordinates.
-- `src/data/clubs.ts` — invented dispersion parameters.
+- `src/data/clubs.ts` — invented dispersion parameters. Only used as the fallback bag
+  before the questionnaire is answered; the Bag page replaces it outright.
 - `src/model/expectedStrokes.ts` — invented baseline (see below).
 
 ---
