@@ -658,3 +658,24 @@ header .sub {
   border-color: #c98a3d;
   color: #f0d6b4;
 }
+
+.yard-label-icon { background: none; border: none; }
+
+.yard-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 0 4px #000, 0 0 9px #000;
+}
+
+.yard-label.out { color: #ffffff; }
+.yard-label.in { color: #8ddf94; }
+
+.bag-editor input[type='text'].club-name { width: 100%; min-width: 92px; }
+.bag-editor input[type='number'] { width: 66px; }
+.bag-editor select { max-width: 108px; }
+.bag-editor td { padding: 4px 3px; vertical-align: middle; }
+.bag-editor tbody tr { cursor: default; }
+.bag-editor tbody tr.out { opacity: 0.45; }

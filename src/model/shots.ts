@@ -1,5 +1,5 @@
 import { direction, dist, rightPerp } from './geometry';
-import type { FeatureType, Point } from './types';
+import type { ClubParams, FeatureType, Point } from './types';
 
 /**
  * Logged shots, and the empirical dispersion pattern built from them.
@@ -75,18 +75,6 @@ export function normalize(shot: Shot): NormalizedShot | null {
   return { ratio: shot.actualDistance / shot.intendedDistance, angle: shot.offlineAngle };
 }
 
-/**
- * Which clubs pool together when a club has too few shots of its own.
- * Spec 4.2's family level, minus the shrinkage arithmetic.
- */
-export const FAMILY: Record<string, string> = {
-  driver: 'driver',
-  '3w': 'wood',
-  '5w': 'wood',
-  '4i': 'long_iron',
-  '6i': 'mid_iron',
-};
-
 export interface PatternSource {
   own: NormalizedShot[];
   family: NormalizedShot[];
@@ -104,15 +92,27 @@ export interface PatternSource {
 
 export const SHRINKAGE_K = 12;
 
-export function buildPattern(shots: Shot[], clubId: string): PatternSource {
+/**
+ * Pool a club's logged shots, falling back to its family.
+ *
+ * Spec 4.2's family level, minus the shrinkage arithmetic. The family comes off
+ * the club record rather than a hardcoded table, because the bag is whatever
+ * the player actually carries -- a fixed list silently mispools every club they
+ * do not happen to own.
+ */
+export function buildPattern(
+  shots: Shot[],
+  club: Pick<ClubParams, 'id' | 'family'>,
+  bag: Pick<ClubParams, 'id' | 'family'>[],
+): PatternSource {
   const own: NormalizedShot[] = [];
   const family: NormalizedShot[] = [];
-  const wantFamily = FAMILY[clubId];
+  const familyOf = new Map(bag.map((c) => [c.id, c.family]));
   for (const s of shots) {
     const n = normalize(s);
     if (!n) continue;
-    if (s.clubId === clubId) own.push(n);
-    else if (wantFamily && FAMILY[s.clubId] === wantFamily) family.push(n);
+    if (s.clubId === club.id) own.push(n);
+    else if (familyOf.get(s.clubId) === club.family) family.push(n);
   }
   // Family shots count, but a club's own data should dominate once it exists.
   const effective = own.length + family.length * 0.35;

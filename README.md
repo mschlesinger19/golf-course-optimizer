@@ -7,7 +7,7 @@ that decides how much any of the modelling is worth.
 ```bash
 npm install
 npm run dev          # the app
-npm test             # 50 model tests, no browser needed
+npm test             # 53 model tests, no browser needed
 npx vite-node scripts/inspect.ts      # what the optimizer says about the demo hole
 npx vite-node scripts/sensitivity.ts  # how much the answer moves when the inputs move
 ```
@@ -32,6 +32,12 @@ Drag the crosshair (or tap the map) and you get two numbers, deliberately side b
 The first layer is a lookup and answers *what is this spot worth*. It is honest and it is
 free. What it cannot do is tell you where to aim, because it prices every target as though
 you hit it perfectly — so the pin always wins.
+
+Both yardages are drawn on the map itself — ball-to-target and target-to-pin — not only in the
+panel, because standing over the ball you want "how far am I hitting it" and "what's left in"
+without looking away from the hole. The opening target is down the centreline at your longest
+club rather than at the pin: defaulting to the pin on a 400-yard hole asks the model to
+simulate a shot nobody can hit.
 
 The gap between the two layers is the whole argument. On the demo hole, dragging to the pin
 from the tee reads **+2.45** perfect and **+0.35** realistic: a two-stroke divergence, and
@@ -84,6 +90,12 @@ course record carries an imagery-vintage note.
 ## Bag — where the numbers come from
 
 Two sources, in priority order.
+
+**Your clubs.** The bag is user-defined — add, rename, remove, set carries, mark clubs in or
+out. Nobody carries the same fourteen, and a fixed list does worse than look wrong: each club
+also carries a *family*, and family is what decides whose logged shots pool with whose when a
+club has too few of its own. A hardcoded list silently mispools every club you do not happen
+to own.
 
 **Logged shots.** Every shot is stored as two dimensionless numbers: the ratio of actual to
 intended distance, and the offline angle. Dimensionless is what lets a shot logged at 150
