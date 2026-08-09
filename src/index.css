@@ -447,8 +447,11 @@ header .sub {
 .crosshair-icon { background: none; border: none; }
 
 .crosshair {
+  /* Centred inside a 44px icon box: the ring stays visually light while the
+     draggable hit area is finger-sized. */
   width: 34px;
   height: 34px;
+  margin: 5px;
   border: 2px solid #7fd4ff;
   border-radius: 50%;
   box-shadow: 0 0 0 1px #00000066;
@@ -465,6 +468,9 @@ header .sub {
 
 .crosshair::before { left: 50%; top: -8px; bottom: -8px; width: 2px; margin-left: -1px; }
 .crosshair::after { top: 50%; left: -8px; right: -8px; height: 2px; margin-top: -1px; }
+
+.crosshair-icon { touch-action: none; }
+.crosshair:active { cursor: grabbing; border-color: #ffffff; }
 
 /* ---------- play ---------- */
 

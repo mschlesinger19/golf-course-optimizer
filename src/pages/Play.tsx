@@ -97,7 +97,16 @@ export function Play({
   >(null);
   const [logNote, setLogNote] = useState<string | null>(null);
   const overlayRef = useRef<L.LayerGroup | null>(null);
+  const patternRef = useRef<L.LayerGroup | null>(null);
+  const chromeRef = useRef<L.LayerGroup | null>(null);
   const targetMarkerRef = useRef<L.Marker | null>(null);
+  const ballMarkerRef = useRef<L.CircleMarker | null>(null);
+  const aimLineRef = useRef<L.Polyline | null>(null);
+  const draggingRef = useRef(false);
+  // The crosshair is built once, so its drag handler would otherwise close over
+  // the ball position from first render.
+  const ballRef = useRef(ball);
+  ballRef.current = ball;
 
   // Reset ball and target when the hole changes.
   useEffect(() => {
@@ -146,24 +155,28 @@ export function Play({
     };
   }, [compiled, projected, ball, deferredTarget, clubId, bag, noise, skillFactor, profile.shots]);
 
-  // Draw the aim line, the miss pattern and the crosshair.
+  /**
+   * Two sublayers, and the split is load-bearing.
+   *
+   * `chrome` holds the ball, the aim line and the crosshair, all created once
+   * and moved in place. `pattern` holds the scatter and the wedge, which are
+   * torn down and rebuilt whenever the evaluation changes.
+   *
+   * Drawing both into one group meant every drag event cleared the group and
+   * rebuilt the marker underneath the pointer, so Leaflet lost its grab and the
+   * crosshair crawled a few pixels at a time instead of following the finger.
+   */
   const handleReady = useCallback((_map: L.Map, overlay: L.LayerGroup) => {
     overlayRef.current = overlay;
+    patternRef.current = L.layerGroup().addTo(overlay);
+    chromeRef.current = L.layerGroup().addTo(overlay);
   }, []);
 
   useEffect(() => {
-    const overlay = overlayRef.current;
-    if (!overlay || !projected || !ball || !target) return;
-    overlay.clearLayers();
+    const pattern = patternRef.current;
+    if (!pattern || !projected || !ball || !deferredTarget) return;
+    pattern.clearLayers();
     const toLatLng = projected.projector.toLatLng;
-
-    L.polyline(
-      [
-        [ball.lat, ball.lng],
-        [target.lat, target.lng],
-      ],
-      { color: '#ffffff', weight: 2, opacity: 0.9 },
-    ).addTo(overlay);
 
     if (showPattern && evaluation?.result.realistic) {
       for (const p of evaluation.result.realistic.scatter) {
@@ -174,7 +187,7 @@ export function Play({
           weight: 0,
           fillColor: '#f0a63c',
           fillOpacity: 0.55,
-        }).addTo(overlay);
+        }).addTo(pattern);
       }
 
       // The wedge. Dispersion is angular, so the band of equal distance is an
@@ -183,8 +196,12 @@ export function Play({
       const shape = evaluation.result.realistic.shape;
       const startP = projected.projector.toLocal(ball);
       const dir = {
-        x: (projected.projector.toLocal(target).x - startP.x) / evaluation.result.distanceToTarget,
-        y: (projected.projector.toLocal(target).y - startP.y) / evaluation.result.distanceToTarget,
+        x:
+          (projected.projector.toLocal(deferredTarget).x - startP.x) /
+          evaluation.result.distanceToTarget,
+        y:
+          (projected.projector.toLocal(deferredTarget).y - startP.y) /
+          evaluation.result.distanceToTarget,
       };
       const at = (radius: number, angleRad: number) => {
         const d = rotateDeg(dir, (angleRad * 180) / Math.PI);
@@ -199,7 +216,7 @@ export function Play({
         const ll = at(shape.meanRadius, a);
         arcPts.push([ll.lat, ll.lng]);
       }
-      L.polyline(arcPts, { color: '#ffffff', weight: 1.6, opacity: 0.85 }).addTo(overlay);
+      L.polyline(arcPts, { color: '#ffffff', weight: 1.6, opacity: 0.85 }).addTo(pattern);
 
       // End ticks, so the arc reads as a measured span rather than a stray line.
       for (const side of [-1, 1]) {
@@ -212,7 +229,7 @@ export function Play({
             [outer.lat, outer.lng],
           ],
           { color: '#ffffff', weight: 1.4, opacity: 0.7 },
-        ).addTo(overlay);
+        ).addTo(pattern);
       }
 
       const near = at(shape.meanRadius - shape.k * shape.sdRadius, shape.meanAngle);
@@ -223,7 +240,7 @@ export function Play({
           [far.lat, far.lng],
         ],
         { color: '#ffffff', weight: 1.6, opacity: 0.85 },
-      ).addTo(overlay);
+      ).addTo(pattern);
 
       const label = (
         p: { lat: number; lng: number },
@@ -239,7 +256,7 @@ export function Play({
             iconSize: [110, 20],
             iconAnchor: anchor,
           }),
-        }).addTo(overlay);
+        }).addTo(pattern);
 
       label(
         at(shape.meanRadius, shape.meanAngle - halfAngle * 1.9),
@@ -253,27 +270,73 @@ export function Play({
       label(far, `${shape.meanRadius.toFixed(0)} yd avg`, 'Mean carry across the pattern', [55, 24]);
     }
 
-    L.circleMarker([ball.lat, ball.lng], {
-      radius: 6,
-      color: '#ffffff',
-      weight: 2,
-      fillColor: '#2f6f9f',
-      fillOpacity: 1,
-    }).addTo(overlay);
+  }, [projected, ball, deferredTarget, evaluation, showPattern]);
 
-    const icon = L.divIcon({
-      className: 'crosshair-icon',
-      html: '<div class="crosshair"></div>',
-      iconSize: [34, 34],
-      iconAnchor: [17, 17],
-    });
-    const marker = L.marker([target.lat, target.lng], { icon, draggable: true }).addTo(overlay);
-    marker.on('drag', (e) => {
-      const ll = (e.target as L.Marker).getLatLng();
-      setTarget({ lat: ll.lat, lng: ll.lng });
-    });
-    targetMarkerRef.current = marker;
-  }, [projected, ball, target, evaluation, showPattern]);
+  // Chrome: created once, moved in place. Never cleared, so a drag in progress
+  // is never interrupted.
+  useEffect(() => {
+    const chrome = chromeRef.current;
+    if (!chrome || !ball || !target) return;
+
+    const line: [number, number][] = [
+      [ball.lat, ball.lng],
+      [target.lat, target.lng],
+    ];
+    if (aimLineRef.current) aimLineRef.current.setLatLngs(line);
+    else {
+      aimLineRef.current = L.polyline(line, {
+        color: '#ffffff',
+        weight: 2,
+        opacity: 0.9,
+      }).addTo(chrome);
+    }
+
+    if (ballMarkerRef.current) ballMarkerRef.current.setLatLng([ball.lat, ball.lng]);
+    else {
+      ballMarkerRef.current = L.circleMarker([ball.lat, ball.lng], {
+        radius: 6,
+        color: '#ffffff',
+        weight: 2,
+        fillColor: '#2f6f9f',
+        fillOpacity: 1,
+      }).addTo(chrome);
+    }
+
+    if (!targetMarkerRef.current) {
+      const marker = L.marker([target.lat, target.lng], {
+        icon: L.divIcon({
+          className: 'crosshair-icon',
+          html: '<div class="crosshair"></div>',
+          iconSize: [44, 44],
+          iconAnchor: [22, 22],
+        }),
+        draggable: true,
+        // Bigger grab target than the drawn ring: 44px is the usual minimum
+        // for a finger, and this is used one-handed standing over a ball.
+        autoPan: true,
+        autoPanPadding: [40, 40],
+      }).addTo(chrome);
+      marker.on('dragstart', () => {
+        draggingRef.current = true;
+      });
+      marker.on('drag', (e) => {
+        const ll = (e.target as L.Marker).getLatLng();
+        // Move the line imperatively so it tracks at pointer speed; React only
+        // has to keep up with the numbers.
+        const b = ballRef.current;
+        if (b) aimLineRef.current?.setLatLngs([[b.lat, b.lng], [ll.lat, ll.lng]]);
+        setTarget({ lat: ll.lat, lng: ll.lng });
+      });
+      marker.on('dragend', () => {
+        draggingRef.current = false;
+      });
+      targetMarkerRef.current = marker;
+    } else if (!draggingRef.current) {
+      // Never fight the pointer: only reposition when the change came from
+      // somewhere else, such as a map tap or a hole switch.
+      targetMarkerRef.current.setLatLng([target.lat, target.lng]);
+    }
+  }, [ball, target]);
 
   /**
    * Second tap: where the ball finished. Stores the shot as a ratio and an
