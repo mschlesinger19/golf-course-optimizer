@@ -11,6 +11,7 @@ import type { LatLng } from '../model/projection';
 import type { FeatureType } from '../model/types';
 import { FEATURE_STYLE, MapView, type TileSourceKey } from '../ui/MapView';
 import { createCourse, exportCourse, importCourse } from '../store/courses';
+import { OsmImport } from '../ui/OsmImport';
 
 type Mode = 'tee' | 'green' | 'pin' | 'centerline' | 'polygon';
 
@@ -218,6 +219,7 @@ export function Trace({ courses, onLoadDemo, onSave, onDelete, tileSource, onTil
         <div className="play-actions">
           <button onClick={onLoadDemo}>Load the synthetic demo hole</button>
         </div>
+        <OsmImport onImport={(c) => { onSave(c); setCourseId(c.id); }} />
       </div>
     );
   }
@@ -409,6 +411,8 @@ export function Trace({ courses, onLoadDemo, onSave, onDelete, tileSource, onTil
         </label>
         <NewCourse onCreate={(c) => { onSave(c); setCourseId(c.id); }} />
       </section>
+
+      <OsmImport onImport={(c) => { onSave(c); setCourseId(c.id); }} />
     </div>
   );
 }

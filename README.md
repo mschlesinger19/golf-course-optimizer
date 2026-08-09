@@ -7,7 +7,7 @@ that decides how much any of the modelling is worth.
 ```bash
 npm install
 npm run dev          # the app
-npm test             # 53 model tests, no browser needed
+npm test             # 66 model tests, no browser needed
 npx vite-node scripts/inspect.ts      # what the optimizer says about the demo hole
 npx vite-node scripts/sensitivity.ts  # how much the answer moves when the inputs move
 ```
@@ -78,6 +78,18 @@ click out polygons from a palette. Rough is deliberately not in the palette — 
 makes it implicit, so anything untraced resolves to rough and tracing it is wasted work.
 Each polygon carries the `penalty_modifier` local-knowledge field, because a flat fairway
 bunker and a lipped-out greenside bunker are both `bunker` and differ by most of a stroke.
+
+**Import from OpenStreetMap** is spec §9's second path, and it stays second on purpose: coverage
+is patchy and private clubs are systematically the gap. Search by name, or hit "I'm at the
+course" and it queries Overpass around your GPS fix. `golf=hole` ways are the skeleton — each
+carries the hole number and usually the par, and its geometry is the centreline, so its first
+point is the tee and its last is the green. Every polygon is then assigned to the nearest
+centreline, because OSM polygons rarely say which hole they belong to.
+
+It reports what it found rather than presenting it as surveyed: features per hole, anything
+dropped for sitting more than 200y from every centreline, holes that had no par tag, and — per
+§9's bimodal-coverage warning — a plain statement when under two features per hole means the
+course came back as an undifferentiated blob and you should trace it.
 
 Courses export and import as JSON. KML (spec §9) is not built yet.
 

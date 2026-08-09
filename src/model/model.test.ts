@@ -288,3 +288,31 @@ describe('optimizer', () => {
     }
   });
 });
+
+describe('lie priority', () => {
+  it('ranks an explicit rough polygon below every hazard', () => {
+    // Unlisted feature types index to -1 and would sort ahead of everything,
+    // which would make imported rough outrank the water inside it.
+    const withRough = compileHole({
+      ...DEMO_HOLE,
+      features: [
+        ...DEMO_HOLE.features,
+        {
+          id: 'rough-blanket',
+          type: 'rough',
+          polygon: [
+            { x: -200, y: -50 },
+            { x: 300, y: -50 },
+            { x: 300, y: 500 },
+            { x: -200, y: 500 },
+          ],
+        },
+      ],
+    });
+    expect(resolveLie(withRough, 0, 270).type).toBe('water');
+    expect(resolveLie(withRough, 120, 358).type).toBe('green');
+    expect(resolveLie(withRough, -120, 200).type).toBe('ob');
+    // And it still wins where nothing else is traced.
+    expect(resolveLie(withRough, -60, 60).type).toBe('rough');
+  });
+});

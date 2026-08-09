@@ -679,3 +679,31 @@ header .sub {
 .bag-editor td { padding: 4px 3px; vertical-align: middle; }
 .bag-editor tbody tr { cursor: default; }
 .bag-editor tbody tr.out { opacity: 0.45; }
+
+.hit-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+
+.hit {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #1e2820;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.hit:hover { background: #26332a; }
+.hit strong { display: block; font-size: 14px; }
+.hit span { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
+.import-result {
+  margin-top: 12px;
+  border-left: 2px solid #5aa86a;
+  padding-left: 10px;
+  font-size: 13px;
+}
+
+.import-result.thin { border-left-color: #c98a3d; }
+.import-result p { margin: 0 0 6px; }
