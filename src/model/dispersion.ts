@@ -97,6 +97,28 @@ export function sampleShotCloud(club: ClubParams, noise: NoiseBank): ShotCloud {
 }
 
 /**
+ * A shot cloud centred on an arbitrary target distance rather than the club's
+ * own carry.
+ *
+ * This is what the drag-and-drop page needs. Dragging a crosshair says "I want
+ * the ball to finish here" -- the player will flight it or club down to suit --
+ * so the pattern centres on the target and the spread scales with the distance
+ * actually being hit, which is exactly why spec 4.1 stores sigma as a fraction
+ * of carry rather than in yards.
+ *
+ * The mishit carry multiplier still applies, because coming up short is a
+ * property of the strike, not of the target.
+ */
+export function sampleTargetCloud(
+  club: ClubParams,
+  noise: NoiseBank,
+  targetDistance: number,
+): ShotCloud {
+  const scaled: ClubParams = { ...club, meanCarry: Math.max(targetDistance, 1) };
+  return sampleShotCloud(scaled, noise);
+}
+
+/**
  * Roll after landing, as a fraction of the club's fairway roll. Landing in
  * something soft or grabby kills most of it.
  */

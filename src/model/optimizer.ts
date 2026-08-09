@@ -1,4 +1,10 @@
-import { rollFactor, sampleShotCloud, type NoiseBank, type ShotCloud } from './dispersion';
+import {
+  rollFactor,
+  sampleShotCloud,
+  sampleTargetCloud,
+  type NoiseBank,
+  type ShotCloud,
+} from './dispersion';
 import { expectedStrokes, type CostConfig } from './expectedStrokes';
 import {
   angleBetweenDeg,
@@ -339,6 +345,128 @@ export function optimizeShot(
     if (a < b) bestClubIndex = i;
   }
   return { byClub, bestClubIndex };
+}
+
+export interface RealisticEvaluation {
+  club: ClubParams;
+  /** Expected total strokes to hole out, including this shot. */
+  expectedStrokes: number;
+  /** Strokes gained against standing where you are. Positive is good. */
+  gain: number;
+  outcomeShare: Record<Outcome, number>;
+  scatter: Point[];
+}
+
+export interface TargetEvaluation {
+  distanceToTarget: number;
+  distanceTargetToPin: number;
+  targetLie: FeatureType;
+  /** Expected strokes from where the ball is now. The baseline for both gains. */
+  currentStrokes: number;
+  /** Expected strokes if the ball finishes exactly on the crosshair. */
+  perfectStrokes: number;
+  perfectGain: number;
+  /** Absent until a club is chosen -- the deterministic layer stands alone. */
+  realistic?: RealisticEvaluation;
+}
+
+/**
+ * Price a dragged crosshair, in two layers.
+ *
+ * The deterministic layer needs no dispersion model at all: it is a lookup of
+ * expected strokes at the target, and it answers "what is this spot worth."
+ * The realistic layer answers the different and harder question the app exists
+ * for -- "what happens when I aim there" -- and the two diverge exactly where
+ * a hazard sits inside the miss pattern rather than at the target. Showing
+ * both is the argument for why the second one matters.
+ *
+ * The target is treated as where the ball comes to rest, so no roll is applied.
+ */
+export function evaluateTarget(
+  compiled: CompiledHole,
+  start: Point,
+  startLie: Lie,
+  target: Point,
+  config: CostConfig,
+  club?: ClubParams,
+  noise?: NoiseBank,
+  scatterCount = 300,
+): TargetEvaluation {
+  const pin = compiled.hole.pin;
+  const distanceToTarget = dist(start, target);
+  const distanceTargetToPin = dist(target, pin);
+  const lie = resolveLie(compiled, target.x, target.y);
+  const currentStrokes = expectedStrokes(dist(start, pin), startLie, config);
+
+  // A target in a penalty area is not a place the ball can rest; price it as
+  // taking the penalty rather than as a free lie.
+  const perfectStrokes =
+    lie.type === 'water' || lie.type === 'ob'
+      ? 1 + 1 + currentStrokes
+      : 1 +
+        expectedStrokes(
+          distanceTargetToPin,
+          featureToLie(lie.type),
+          config,
+          lie.penaltyModifier,
+        );
+
+  const result: TargetEvaluation = {
+    distanceToTarget,
+    distanceTargetToPin,
+    targetLie: lie.type,
+    currentStrokes,
+    perfectStrokes,
+    perfectGain: currentStrokes - perfectStrokes,
+  };
+
+  if (club && noise && distanceToTarget > 1) {
+    const cloud = sampleTargetCloud(club, noise, distanceToTarget);
+    const dir = direction(start, target);
+    const scatter: Point[] = [];
+    const acc = evaluateDirection(
+      compiled,
+      start,
+      dir,
+      cloud,
+      // Target is the resting place, so roll is already accounted for.
+      { ...club, rollFairway: 0 },
+      config,
+      currentStrokes,
+      pin,
+      scatter,
+      Math.max(1, Math.floor(noise.n / scatterCount)),
+    );
+    const outcomeShare = {} as Record<Outcome, number>;
+    for (let k = 0; k < OUTCOMES.length; k++) {
+      outcomeShare[OUTCOMES[k]] = acc.counts[k] / cloud.n;
+    }
+    const expected = acc.total / cloud.n;
+    result.realistic = {
+      club,
+      expectedStrokes: expected,
+      gain: currentStrokes - expected,
+      outcomeShare,
+      scatter,
+    };
+  }
+
+  return result;
+}
+
+/** The club whose stock shot finishes closest to `distance`. */
+export function suggestClub(clubs: ClubParams[], distance: number): ClubParams | undefined {
+  let best: ClubParams | undefined;
+  let bestDelta = Infinity;
+  for (const c of clubs) {
+    if (!c.inBag) continue;
+    const delta = Math.abs(c.meanCarry + c.rollFairway - distance);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = c;
+    }
+  }
+  return best;
 }
 
 /** Is this point inside any polygon of the given type? Used by the map renderer. */

@@ -1,24 +1,75 @@
-# Golf course optimizer — aim optimizer slice
+# Golf course optimizer
 
-A vertical slice through the [spec](docs/spec.md): one hardcoded hole, a Monte Carlo aim
-optimizer, and a comparison UI. It exists to answer one question before any of the
-modelling machinery gets built —
-
-> **Does the aim recommendation ever tell you something you don't already know?**
-
-Everything else in the spec's build order is deferred until that question has an answer.
+Three pages. **Play** is the app: drag a crosshair anywhere on the hole and it prices the
+target. **Trace** draws the course geometry underneath it. **Lab** is the parameter sweep
+that decides how much any of the modelling is worth.
 
 ```bash
 npm install
 npm run dev          # the app
-npm test             # 18 model tests, no browser needed
+npm test             # 30 model tests, no browser needed
 npx vite-node scripts/inspect.ts      # what the optimizer says about the demo hole
 npx vite-node scripts/sensitivity.ts  # how much the answer moves when the inputs move
 ```
 
+Everything is local-first: courses live in `localStorage`, nothing calls a server, and the
+model runs on-device. Spec §2 makes that non-negotiable — cell coverage on courses is
+unreliable and the app is useless if it cannot compute an aim point without signal. The
+only network dependency is satellite imagery, and losing it degrades the picture, not the
+numbers.
+
 ---
 
-## What it found
+## Play — the two-layer crosshair
+
+Drag the crosshair (or tap the map) and you get two numbers, deliberately side by side:
+
+| layer | what it is | needs dispersion? |
+|---|---|---|
+| **if you hit it exactly here** | `E(strokes)` at the target, versus the baseline where you stand | no |
+| **realistic** | the same thing averaged over your miss pattern at that distance | yes |
+
+The first layer is a lookup and answers *what is this spot worth*. It is honest and it is
+free. What it cannot do is tell you where to aim, because it prices every target as though
+you hit it perfectly — so the pin always wins.
+
+The gap between the two layers is the whole argument. On the demo hole, dragging to the pin
+from the tee reads **+2.45** perfect and **+0.35** realistic: a two-stroke divergence, and
+the realistic column shows 23% trees against 13% green. That gap is the cost of your miss
+pattern, and the app calls it out explicitly whenever it exceeds 0.15 strokes.
+
+Dispersion is not optional if the app answers "where should I aim." But per the sweep below
+it can be *crude* — the recommendation survived a 4× error in it.
+
+Guards worth knowing about: a target inside water or OB is priced as taking the penalty
+rather than as a free lie, and dragging beyond the longest club in the bag raises a warning
+instead of quietly simulating a shot nobody can hit.
+
+## Trace — geometry
+
+Per-hole workflow from spec §9: set tee, green centre and pin, draw the centreline, then
+click out polygons from a palette. Rough is deliberately not in the palette — spec §3.1
+makes it implicit, so anything untraced resolves to rough and tracing it is wasted work.
+Each polygon carries the `penalty_modifier` local-knowledge field, because a flat fairway
+bunker and a lipped-out greenside bunker are both `bunker` and differ by most of a stroke.
+
+Courses export and import as JSON. KML (spec §9) is not built yet.
+
+Imagery defaults to **NAIP** — public domain, no attribution requirement, no restriction on
+deriving data, ~60cm, which resolves bunker edges and green perimeters cleanly. USGS and
+Esri are selectable because NAIP is CONUS-only and refreshes on a multi-year cycle; spec §9
+warns that a flyover predating a renovation produces confidently wrong polygons, so the
+course record carries an imagery-vintage note.
+
+## Lab — the sweep
+
+The original vertical slice: full aim-angle optimisation over a hardcoded hole, with every
+dispersion parameter on a slider.
+
+---
+
+## What the sweep found
+
 
 On the demo hole — dogleg right, pond exactly where a straight driver finishes, bunker in
 the lay-up zone — with a mid-handicap bag:
@@ -83,6 +134,10 @@ Per the spec's own framing of this slice:
   rough. This is the shape the tracer needs to emit.
 - `src/model/dispersion.ts` — the 2D mixture sampler and the shared noise bank.
 - The comparison UI — expected-strokes deltas, outcome shares, the cost-by-angle curve.
+- `src/model/projection.ts` and `src/model/course.ts` — lat/lng traced geometry, projected
+  into the optimizer's flat-yard frame about the tee. Accurate to centimetres over a hole,
+  which is far below the noise floor of everything else here.
+- `src/pages/Trace.tsx` — the tracer, which spec §9 calls the primary geometry path.
 
 **Throwaway:**
 

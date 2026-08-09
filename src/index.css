@@ -357,3 +357,248 @@ header .sub {
 .reset:hover {
   background: #2c3a2e;
 }
+
+/* ---------- shell ---------- */
+
+.app-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.tab.on {
+  background: #24402c;
+  color: #d8f2dc;
+}
+
+.chip {
+  background: #1e2820;
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.chip.on {
+  background: #2d5b36;
+  border-color: #5aa86a;
+}
+
+/* ---------- map ---------- */
+
+.map-host {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.map-canvas {
+  height: 58vh;
+  min-height: 320px;
+  width: 100%;
+  background: #16211a;
+}
+
+.leaflet-container {
+  background: #16211a;
+  font: inherit;
+}
+
+.map-tile-warning {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 500;
+  background: #241a10ee;
+  border: 1px solid #6b4a2a;
+  color: #f0d6b4;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.crosshair-icon { background: none; border: none; }
+
+.crosshair {
+  width: 34px;
+  height: 34px;
+  border: 2px solid #7fd4ff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #00000066;
+  position: relative;
+  cursor: grab;
+}
+
+.crosshair::before,
+.crosshair::after {
+  content: '';
+  position: absolute;
+  background: #7fd4ff;
+}
+
+.crosshair::before { left: 50%; top: -8px; bottom: -8px; width: 2px; margin-left: -1px; }
+.crosshair::after { top: 50%; left: -8px; right: -8px; height: 2px; margin-top: -1px; }
+
+/* ---------- play ---------- */
+
+.play, .trace { display: grid; gap: 12px; }
+
+.play-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.play-bar select,
+.hole-meta input,
+.play-actions input[type='text'],
+.play-actions input[type='number'],
+.club-row select,
+.club-table input,
+.slider input[type='text'] {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.play-bar select { flex: 1; }
+
+.play-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.play-actions button, .mode-row button {
+  background: #243026;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.play-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.mode-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.inline-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+
+.yardages {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.yardages .k {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.yardages .v { font-size: 26px; font-variant-numeric: tabular-nums; }
+.yardages .v em { font-size: 14px; font-style: normal; color: var(--muted); }
+.yardages .v.small { font-size: 17px; text-transform: capitalize; }
+
+.layers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+
+.layer-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.layer-sub { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
+.gain {
+  display: block;
+  font-size: 30px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.gain.good { color: #7fe08a; }
+.gain.bad { color: #ff8a7a; }
+.gain.flat { color: var(--muted); }
+
+.readout.stale { opacity: 0.55; }
+
+.chips { list-style: none; display: flex; flex-wrap: wrap; gap: 10px; padding: 0; margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.chips .dot, .club-table .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 5px; }
+.chips strong { color: var(--text); font-variant-numeric: tabular-nums; }
+
+.divergence { border-left: 2px solid var(--accent); padding-left: 10px; }
+
+.club-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+.club-row label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+
+.hole-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.hole-meta label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.hole-meta input { width: 64px; }
+
+.club-table input { width: 78px; }
+
+.note.warn { color: #f0c9a0; }
+
+.card.empty { text-align: left; }
+.card.empty h2 { margin: 0 0 6px; font-size: 17px; }
+
+@media (max-width: 560px) {
+  .layers, .yardages { grid-template-columns: 1fr; }
+  .yardages { grid-template-columns: repeat(3, 1fr); }
+}
+
+.note.oor {
+  border-left: 2px solid #c98a3d;
+  padding-left: 10px;
+  margin-bottom: 12px;
+}
+
+/* leaflet.css is injected after this file, so its #ddd default needs
+   out-specifying rather than merely restating. */
+.map-host .leaflet-container { background: #16211a; }
+.map-host .leaflet-control-zoom a {
+  background: #1e2820;
+  color: var(--text);
+  border-color: var(--line);
+}
+.map-host .leaflet-control-attribution {
+  background: #0d120ecc;
+  color: var(--muted);
+}
+.map-host .leaflet-control-attribution a { color: var(--accent); }
