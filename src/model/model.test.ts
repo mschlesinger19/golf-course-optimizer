@@ -123,7 +123,16 @@ describe('dispersion', () => {
   it('describes the cloud with a wedge that bounds its own scatter', () => {
     const cloud = sampleShotCloud(DEFAULT_BAG[0], makeNoiseBank(20000));
     const shape = patternShape(cloud, 1.5);
-    expect(shape.meanRadius).toBeCloseTo(DEFAULT_BAG[0].meanCarry, -1);
+    // The mean radius sits *below* the club's carry, because the mishit
+    // component carries short: (1-w)·carry + w·carry·mishitCarryMult. This is
+    // the same effect that makes the map label read less than the target, and
+    // it is why that label says "avg".
+    const club = DEFAULT_BAG[0];
+    const mixtureMean =
+      (1 - club.mishitWeight) * club.meanCarry +
+      club.mishitWeight * club.meanCarry * club.mishitCarryMult;
+    expect(shape.meanRadius).toBeCloseTo(mixtureMean, 0);
+    expect(shape.meanRadius).toBeLessThan(club.meanCarry);
     expect(shape.widthYards).toBeGreaterThan(0);
     // Roughly 87% of samples should fall inside a 1.5-sigma band on each axis.
     let inside = 0;

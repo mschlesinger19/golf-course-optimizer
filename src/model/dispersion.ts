@@ -1,3 +1,4 @@
+import type { PatternSource } from './shots';
 import type { ClubParams } from './types';
 
 /** mulberry32 -- small, fast, deterministic. */
@@ -28,6 +29,10 @@ export interface NoiseBank {
   zLong: Float64Array;
   zLat: Float64Array;
   uMishit: Float64Array;
+  /** Chooses between a logged shot and the prior, per sample. */
+  uBlend: Float64Array;
+  /** Selects which logged shot to bootstrap, per sample. */
+  uIndex: Float64Array;
 }
 
 export function makeNoiseBank(n: number, seed = 0x5eed): NoiseBank {
@@ -35,6 +40,8 @@ export function makeNoiseBank(n: number, seed = 0x5eed): NoiseBank {
   const zLong = new Float64Array(n);
   const zLat = new Float64Array(n);
   const uMishit = new Float64Array(n);
+  const uBlend = new Float64Array(n);
+  const uIndex = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     // Box-Muller, both outputs used.
     const u1 = Math.max(rand(), 1e-12);
@@ -44,8 +51,10 @@ export function makeNoiseBank(n: number, seed = 0x5eed): NoiseBank {
     zLong[i] = r * Math.cos(theta);
     zLat[i] = r * Math.sin(theta);
     uMishit[i] = rand();
+    uBlend[i] = rand();
+    uIndex[i] = rand();
   }
-  return { n, zLong, zLat, uMishit };
+  return { n, zLong, zLat, uMishit, uBlend, uIndex };
 }
 
 /**
@@ -85,7 +94,11 @@ export interface ShotCloud {
  * This is also the plainer reading of spec 4.1: sigma stored as a fraction of
  * carry, applied to the carry each shot actually had.
  */
-export function sampleShotCloud(club: ClubParams, noise: NoiseBank): ShotCloud {
+export function sampleShotCloud(
+  club: ClubParams,
+  noise: NoiseBank,
+  pattern?: PatternSource,
+): ShotCloud {
   const n = noise.n;
   const carry = new Float64Array(n);
   const lateral = new Float64Array(n);
@@ -101,7 +114,26 @@ export function sampleShotCloud(club: ClubParams, noise: NoiseBank): ShotCloud {
   const biasAngle = Math.atan(club.lateralBiasPct);
   const mishitBiasAngle = Math.atan(club.mishitLateralBiasPct);
 
+  const pool = pattern?.pool ?? [];
+  const realWeight = pool.length > 0 ? (pattern?.realWeight ?? 0) : 0;
+
   for (let i = 0; i < n; i++) {
+    // Bootstrap a logged shot, or fall back to the prior. The split is spec
+    // 4.2's n/(n+k) shrinkage, applied per sample rather than per parameter --
+    // which means the pattern's *shape* comes from real shots as soon as any
+    // exist, instead of being averaged into a Gaussian that never had the
+    // shape in the first place.
+    if (realWeight > 0 && noise.uBlend[i] < realWeight) {
+      const picked = pool[Math.min(pool.length - 1, Math.floor(noise.uIndex[i] * pool.length))];
+      const rr = Math.max(5, club.meanCarry * picked.ratio);
+      radius[i] = rr;
+      angle[i] = picked.angle;
+      carry[i] = rr * Math.cos(picked.angle);
+      lateral[i] = rr * Math.sin(picked.angle);
+      isMishit[i] = 0;
+      continue;
+    }
+
     const mishit = noise.uMishit[i] < club.mishitWeight;
     let r: number;
     let theta: number;
@@ -142,9 +174,10 @@ export function sampleTargetCloud(
   club: ClubParams,
   noise: NoiseBank,
   targetDistance: number,
+  pattern?: PatternSource,
 ): ShotCloud {
   const scaled: ClubParams = { ...club, meanCarry: Math.max(targetDistance, 1) };
-  return sampleShotCloud(scaled, noise);
+  return sampleShotCloud(scaled, noise, pattern);
 }
 
 /**

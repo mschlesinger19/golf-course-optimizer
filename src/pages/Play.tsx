@@ -1,6 +1,5 @@
 import L from 'leaflet';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { cloneBag } from '../data/clubs';
 import { centerlineYardage, isPlayable, projectHole, type GeoCourse } from '../model/course';
 import { makeNoiseBank } from '../model/dispersion';
 import { PROVISIONAL_BASELINE } from '../model/expectedStrokes';
@@ -9,6 +8,8 @@ import { evaluateTarget, OUTCOMES, suggestClub, type Outcome } from '../model/op
 import { rotateDeg } from '../model/geometry';
 import type { LatLng } from '../model/projection';
 import type { Lie, Point } from '../model/types';
+import { buildPattern, measureShot, type Shot } from '../model/shots';
+import type { Profile } from '../store/profile';
 import { MapView, type TileSourceKey } from '../ui/MapView';
 
 const OUTCOME_COLOR: Record<Outcome, string> = {
@@ -50,13 +51,23 @@ function fmtGain(v: number): string {
 
 export interface PlayProps {
   courses: GeoCourse[];
+  profile: Profile;
+  onLogShot: (s: Shot) => void;
   onLoadDemo: () => void;
   tileSource: TileSourceKey;
   onTileSource: (k: TileSourceKey) => void;
   skillFactor: number;
 }
 
-export function Play({ courses, onLoadDemo, tileSource, onTileSource, skillFactor }: PlayProps) {
+export function Play({
+  courses,
+  profile,
+  onLogShot,
+  onLoadDemo,
+  tileSource,
+  onTileSource,
+  skillFactor,
+}: PlayProps) {
   const playable = useMemo(
     () =>
       courses
@@ -76,7 +87,15 @@ export function Play({ courses, onLoadDemo, tileSource, onTileSource, skillFacto
   const [showPattern, setShowPattern] = useState(true);
   const [gpsError, setGpsError] = useState<string | null>(null);
 
-  const bag = useMemo(() => cloneBag(), []);
+  const bag = profile.bag;
+  // Armed by "Log shot": holds where the shot started and where it was aimed,
+  // so the next tap on the map is the finishing position. Spec 6 budgets two
+  // taps per shot, and this is the "log at the ball" pattern it suggests --
+  // the app already knows the origin, so it only needs where you ended up.
+  const [pending, setPending] = useState<
+    { start: LatLng; intended: LatLng; clubId: string } | null
+  >(null);
+  const [logNote, setLogNote] = useState<string | null>(null);
   const overlayRef = useRef<L.LayerGroup | null>(null);
   const targetMarkerRef = useRef<L.Marker | null>(null);
 
@@ -102,6 +121,7 @@ export function Play({ courses, onLoadDemo, tileSource, onTileSource, skillFacto
     const distance = Math.hypot(targetP.x - startP.x, targetP.y - startP.y);
     const club =
       clubId === 'auto' ? suggestClub(bag, distance) : bag.find((c) => c.id === clubId);
+    const pattern = club ? buildPattern(profile.shots, club.id) : undefined;
     // Nothing stops you dragging the crosshair 380 yards, but simulating a
     // shot no club in the bag can hit produces a confident number about an
     // impossible shot -- exactly the failure mode the provisional baselines
@@ -121,9 +141,10 @@ export function Play({ courses, onLoadDemo, tileSource, onTileSource, skillFacto
         { skillFactor },
         club,
         noise,
+        pattern,
       ),
     };
-  }, [compiled, projected, ball, deferredTarget, clubId, bag, noise, skillFactor]);
+  }, [compiled, projected, ball, deferredTarget, clubId, bag, noise, skillFactor, profile.shots]);
 
   // Draw the aim line, the miss pattern and the crosshair.
   const handleReady = useCallback((_map: L.Map, overlay: L.LayerGroup) => {
@@ -254,6 +275,47 @@ export function Play({ courses, onLoadDemo, tileSource, onTileSource, skillFacto
     targetMarkerRef.current = marker;
   }, [projected, ball, target, evaluation, showPattern]);
 
+  /**
+   * Second tap: where the ball finished. Stores the shot as a ratio and an
+   * angle, both dimensionless, so a shot logged at 150y informs the pattern
+   * drawn at 200y -- the same assumption spec 4.1 makes for sigma.
+   */
+  const finishShot = (end: LatLng) => {
+    if (!pending || !projected || !compiled) return;
+    const toLocal = projected.projector.toLocal;
+    const startP = toLocal(pending.start);
+    const endP = toLocal(end);
+    const m = measureShot(startP, toLocal(pending.intended), endP);
+    if (m.intendedDistance < 20) {
+      setLogNote('Shot too short to model — under 20 yards is a different game.');
+      setPending(null);
+      return;
+    }
+    const shot: Shot = {
+      id: `shot-${profile.shots.length + 1}-${Math.round(m.actualDistance)}-${m.offlineAngle.toFixed(4)}`,
+      clubId: pending.clubId,
+      at: new Date().toISOString(),
+      courseId: active?.course.id,
+      holeId: hole?.id,
+      startLie: resolveLie(compiled, startP.x, startP.y).type,
+      endLie: resolveLie(compiled, endP.x, endP.y).type,
+      intendedDistance: m.intendedDistance,
+      actualDistance: m.actualDistance,
+      offlineAngle: m.offlineAngle,
+      penalty: 0,
+    };
+    onLogShot(shot);
+    setPending(null);
+    setLogNote(
+      `Logged: ${m.actualDistance.toFixed(0)}y of an intended ${m.intendedDistance.toFixed(0)}y, ` +
+        `${Math.abs((m.offlineAngle * 180) / Math.PI).toFixed(1)}° ` +
+        `${m.offlineAngle < 0 ? 'left' : 'right'}.`,
+    );
+    // Log at the ball: the next shot starts where this one finished.
+    setBall(end);
+    if (hole?.pin) setTarget(hole.pin);
+  };
+
   const useGps = () => {
     setGpsError(null);
     if (!navigator.geolocation) {
@@ -319,11 +381,29 @@ export function Play({ courses, onLoadDemo, tileSource, onTileSource, skillFacto
         features={hole.features}
         fitTo={[hole.tee!, hole.green!]}
         tileSource={tileSource}
-        onMapClick={(p) => setTarget(p)}
+        onMapClick={(p) => (pending ? finishShot(p) : setTarget(p))}
         onReady={handleReady}
       />
 
       <div className="play-actions">
+        {pending ? (
+          <>
+            <button className="armed" onClick={() => setPending(null)}>
+              Cancel — tap where the ball finished
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => {
+              if (!ball || !target || !r?.realistic) return;
+              setPending({ start: ball, intended: target, clubId: r.realistic.club.id });
+              setLogNote(null);
+            }}
+            disabled={!r?.realistic}
+          >
+            Log shot
+          </button>
+        )}
         <button onClick={useGps}>Use GPS for ball</button>
         <button onClick={() => hole.tee && setBall(hole.tee)}>Ball to tee</button>
         <label className="inline-check">
@@ -331,6 +411,14 @@ export function Play({ courses, onLoadDemo, tileSource, onTileSource, skillFacto
           miss pattern
         </label>
       </div>
+      {pending && (
+        <p className="note warn">
+          Tap the map where the ball finished. Recording a{' '}
+          {bag.find((c) => c.id === pending.clubId)?.name ?? 'shot'} aimed at{' '}
+          {evaluation?.result.distanceToTarget.toFixed(0)}y.
+        </p>
+      )}
+      {logNote && !pending && <p className="note">{logNote}</p>}
       {gpsError && <p className="note warn">{gpsError}</p>}
 
       {r && (
@@ -374,7 +462,14 @@ export function Play({ courses, onLoadDemo, tileSource, onTileSource, skillFacto
                 <>
                   <span className={gainClass(r.realistic.gain)}>{fmtGain(r.realistic.gain)}</span>
                   <span className="layer-sub">
-                    across your miss pattern at {r.distanceToTarget.toFixed(0)}y
+                    {r.realistic.realWeight > 0.01 ? (
+                      <>
+                        {(r.realistic.realWeight * 100).toFixed(0)}% from your logged shots,
+                        rest from the questionnaire
+                      </>
+                    ) : (
+                      <>from the questionnaire — no shots logged for this club yet</>
+                    )}
                   </span>
                 </>
               ) : (

@@ -20,6 +20,7 @@ import {
   rotateDeg,
   type CompiledHole,
 } from './geometry';
+import type { PatternSource } from './shots';
 import type { ClubParams, FeatureType, Lie, Point } from './types';
 
 /** How a sample finished. `water` and `ob` are recorded before relief is taken. */
@@ -359,6 +360,8 @@ export interface RealisticEvaluation {
   scatter: Point[];
   /** The wedge envelope, for drawing the arc and depth band over the map. */
   shape: PatternShape;
+  /** Fraction of the pattern drawn from logged shots rather than the prior. */
+  realWeight: number;
 }
 
 export interface TargetEvaluation {
@@ -394,6 +397,7 @@ export function evaluateTarget(
   config: CostConfig,
   club?: ClubParams,
   noise?: NoiseBank,
+  pattern?: PatternSource,
   scatterCount = 300,
 ): TargetEvaluation {
   const pin = compiled.hole.pin;
@@ -425,7 +429,7 @@ export function evaluateTarget(
   };
 
   if (club && noise && distanceToTarget > 1) {
-    const cloud = sampleTargetCloud(club, noise, distanceToTarget);
+    const cloud = sampleTargetCloud(club, noise, distanceToTarget, pattern);
     const dir = direction(start, target);
     const scatter: Point[] = [];
     const acc = evaluateDirection(
@@ -453,6 +457,7 @@ export function evaluateTarget(
       outcomeShare,
       scatter,
       shape: patternShape(cloud),
+      realWeight: pattern?.pool.length ? pattern.realWeight : 0,
     };
   }
 

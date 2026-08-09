@@ -7,7 +7,7 @@ that decides how much any of the modelling is worth.
 ```bash
 npm install
 npm run dev          # the app
-npm test             # 32 model tests, no browser needed
+npm test             # 50 model tests, no browser needed
 npx vite-node scripts/inspect.ts      # what the optimizer says about the demo hole
 npx vite-node scripts/sensitivity.ts  # how much the answer moves when the inputs move
 ```
@@ -80,6 +80,48 @@ deriving data, ~60cm, which resolves bunker edges and green perimeters cleanly. 
 Esri are selectable because NAIP is CONUS-only and refreshes on a multi-year cycle; spec §9
 warns that a flyover predating a renovation produces confidently wrong polygons, so the
 course record carries an imagery-vintage note.
+
+## Bag — where the numbers come from
+
+Two sources, in priority order.
+
+**Logged shots.** Every shot is stored as two dimensionless numbers: the ratio of actual to
+intended distance, and the offline angle. Dimensionless is what lets a shot logged at 150
+yards inform the pattern drawn at 200 — the same assumption spec §4.1 makes for σ, applied
+to observations instead of parameters. The Play page then bootstraps that pool directly
+rather than fitting anything to it.
+
+This is what eventually retires most of spec §4.2. Hierarchical shrinkage exists to squeeze
+a shape out of very few observations; once the observations are stored, the pattern *is* the
+data. Family pooling stops being a shrinkage formula and becomes list concatenation — a
+5-wood with no shots of its own borrows the 3-wood's, at a third weight.
+
+The split between logged shots and the prior is §4.2's `n/(n+k)` with k=12, applied per
+Monte Carlo sample rather than per parameter. So the pattern takes the *shape* of real shots
+as soon as any exist, instead of being averaged into a Gaussian that never had that shape.
+At 14 logged shots the readout says "54% from your logged shots" — which is 14/(14+12).
+
+**The questionnaire**, until then. Spec §5: never ask for a σ or an average, because golfers
+report their best shot as their average. Ask for counts and directions and infer the rest.
+
+| answer | infers |
+|---|---|
+| fairways hit out of 14 | driver lateral σ, by inverting a hit rate through a fairway-width strip |
+| greens in regulation | iron σ, via a Rayleigh radius on a circular green |
+| penalty strokes per round | mishit weight — spec §5 notes this is otherwise unrecoverable |
+| one-way or two-way miss | signed bias, or none |
+| flush vs thin 7-iron gap | longitudinal σ, treating the gap as the 10th–90th percentile |
+| stated carries | mean carry, after knocking the stated figure down from a 75th percentile |
+
+**The answers are yours; the mapping is mine.** Every constant in it — fairway half-width,
+green radius, what fraction of mishits become penalties — is a modelling assumption, not a
+citation. They are gathered as a single exported `ASSUMPTIONS` object in
+`questionnaire.ts` so they can be argued with or replaced, and the Bag page prints the full
+derivation of every number it produced.
+
+That is still a real improvement on what came before: the previous bag was invented outright.
+It also sidesteps spec §12 open #3 — no published handicap-band prior is needed if the player
+reports their own fairway rate.
 
 ## Lab — the sweep
 
@@ -162,7 +204,8 @@ Per the spec's own framing of this slice:
 **Throwaway:**
 
 - `src/data/demoHole.ts` — invented coordinates.
-- `src/data/clubs.ts` — invented dispersion parameters.
+- `src/data/clubs.ts` — invented dispersion parameters. Only used as the fallback bag
+  before the questionnaire is answered; the Bag page replaces it outright.
 - `src/model/expectedStrokes.ts` — invented baseline (see below).
 
 ---
