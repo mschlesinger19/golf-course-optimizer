@@ -602,3 +602,15 @@ header .sub {
   color: var(--muted);
 }
 .map-host .leaflet-control-attribution a { color: var(--accent); }
+
+.pattern-label-icon { background: none; border: none; }
+
+.pattern-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 0 4px #000, 0 0 8px #000;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+}

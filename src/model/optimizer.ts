@@ -1,8 +1,10 @@
 import {
+  patternShape,
   rollFactor,
   sampleShotCloud,
   sampleTargetCloud,
   type NoiseBank,
+  type PatternShape,
   type ShotCloud,
 } from './dispersion';
 import { expectedStrokes, type CostConfig } from './expectedStrokes';
@@ -355,6 +357,8 @@ export interface RealisticEvaluation {
   gain: number;
   outcomeShare: Record<Outcome, number>;
   scatter: Point[];
+  /** The wedge envelope, for drawing the arc and depth band over the map. */
+  shape: PatternShape;
 }
 
 export interface TargetEvaluation {
@@ -448,6 +452,7 @@ export function evaluateTarget(
       gain: currentStrokes - expected,
       outcomeShare,
       scatter,
+      shape: patternShape(cloud),
     };
   }
 

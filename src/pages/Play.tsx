@@ -6,6 +6,7 @@ import { makeNoiseBank } from '../model/dispersion';
 import { PROVISIONAL_BASELINE } from '../model/expectedStrokes';
 import { compileHole, resolveLie } from '../model/geometry';
 import { evaluateTarget, OUTCOMES, suggestClub, type Outcome } from '../model/optimizer';
+import { rotateDeg } from '../model/geometry';
 import type { LatLng } from '../model/projection';
 import type { Lie, Point } from '../model/types';
 import { MapView, type TileSourceKey } from '../ui/MapView';
@@ -154,6 +155,81 @@ export function Play({ courses, onLoadDemo, tileSource, onTileSource, skillFacto
           fillOpacity: 0.55,
         }).addTo(overlay);
       }
+
+      // The wedge. Dispersion is angular, so the band of equal distance is an
+      // arc struck from the ball, not a straight line across the aim -- which
+      // is why the width marker bows away from you and grows with the club.
+      const shape = evaluation.result.realistic.shape;
+      const startP = projected.projector.toLocal(ball);
+      const dir = {
+        x: (projected.projector.toLocal(target).x - startP.x) / evaluation.result.distanceToTarget,
+        y: (projected.projector.toLocal(target).y - startP.y) / evaluation.result.distanceToTarget,
+      };
+      const at = (radius: number, angleRad: number) => {
+        const d = rotateDeg(dir, (angleRad * 180) / Math.PI);
+        return toLatLng({ x: startP.x + d.x * radius, y: startP.y + d.y * radius });
+      };
+
+      const halfAngle = shape.k * shape.sdAngle;
+      const arcPts: [number, number][] = [];
+      const STEPS = 24;
+      for (let i = 0; i <= STEPS; i++) {
+        const a = shape.meanAngle - halfAngle + (2 * halfAngle * i) / STEPS;
+        const ll = at(shape.meanRadius, a);
+        arcPts.push([ll.lat, ll.lng]);
+      }
+      L.polyline(arcPts, { color: '#ffffff', weight: 1.6, opacity: 0.85 }).addTo(overlay);
+
+      // End ticks, so the arc reads as a measured span rather than a stray line.
+      for (const side of [-1, 1]) {
+        const a = shape.meanAngle + side * halfAngle;
+        const inner = at(shape.meanRadius - shape.k * shape.sdRadius * 0.45, a);
+        const outer = at(shape.meanRadius + shape.k * shape.sdRadius * 0.45, a);
+        L.polyline(
+          [
+            [inner.lat, inner.lng],
+            [outer.lat, outer.lng],
+          ],
+          { color: '#ffffff', weight: 1.4, opacity: 0.7 },
+        ).addTo(overlay);
+      }
+
+      const near = at(shape.meanRadius - shape.k * shape.sdRadius, shape.meanAngle);
+      const far = at(shape.meanRadius + shape.k * shape.sdRadius, shape.meanAngle);
+      L.polyline(
+        [
+          [near.lat, near.lng],
+          [far.lat, far.lng],
+        ],
+        { color: '#ffffff', weight: 1.6, opacity: 0.85 },
+      ).addTo(overlay);
+
+      const label = (
+        p: { lat: number; lng: number },
+        text: string,
+        title: string,
+        anchor: [number, number],
+      ) =>
+        L.marker([p.lat, p.lng], {
+          interactive: false,
+          icon: L.divIcon({
+            className: 'pattern-label-icon',
+            html: `<div class="pattern-label" title="${title}">${text}</div>`,
+            iconSize: [110, 20],
+            iconAnchor: anchor,
+          }),
+        }).addTo(overlay);
+
+      label(
+        at(shape.meanRadius, shape.meanAngle - halfAngle * 1.9),
+        `${shape.widthYards.toFixed(0)} yd wide`,
+        `Span of ±${shape.k}σ of offline angle at this distance`,
+        [95, 10],
+      );
+      // Labelled "avg" on purpose: this is the mean distance the ball actually
+      // travels, which sits short of the target because the mishit component
+      // carries short. Without the word it reads as an arithmetic error.
+      label(far, `${shape.meanRadius.toFixed(0)} yd avg`, 'Mean carry across the pattern', [55, 24]);
     }
 
     L.circleMarker([ball.lat, ball.lng], {

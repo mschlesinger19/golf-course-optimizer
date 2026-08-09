@@ -7,7 +7,7 @@ that decides how much any of the modelling is worth.
 ```bash
 npm install
 npm run dev          # the app
-npm test             # 30 model tests, no browser needed
+npm test             # 32 model tests, no browser needed
 npx vite-node scripts/inspect.ts      # what the optimizer says about the demo hole
 npx vite-node scripts/sensitivity.ts  # how much the answer moves when the inputs move
 ```
@@ -41,9 +41,29 @@ pattern, and the app calls it out explicitly whenever it exceeds 0.15 strokes.
 Dispersion is not optional if the app answers "where should I aim." But per the sweep below
 it can be *crude* — the recommendation survived a 4× error in it.
 
-Guards worth knowing about: a target inside water or OB is priced as taking the penalty
-rather than as a free lie, and dragging beyond the longest club in the bag raises a warning
-instead of quietly simulating a shot nobody can hit.
+### Dispersion is angular
+
+The miss pattern is a cone from the ball, not a rectangle around the aim line. A 2° push is
+3.5 yards offline at 100 yards and 8.7 at 250, so the band of equal distance is an **arc**
+struck from the ball — which is why the width marker on the map bows away from you, and why
+it widens as you go up the bag. At a fixed 207-yard target the wedge measures 59 yards wide
+for a driver and 38 for a 6-iron.
+
+The alternative — sampling a fixed perpendicular offset scaled by the club's mean carry —
+gives an ellipse with a flat far edge, and puts the full sideways spread on a strike that
+travelled 40 yards less. Wrong in exactly the place it matters: the mishits that decide
+whether to bail out. It is also the plainer reading of spec §4.1, where σ is stored as a
+fraction of carry — the carry each shot actually had, not the club's average.
+
+One visible consequence: the wedge label reads *less* than the target distance ("206 yd avg"
+against a 211-yard target). That is not an arithmetic slip. The mishit component carries
+short, so the mean distance the ball travels sits inside the target.
+
+### Guards
+
+A target inside water or OB is priced as taking the penalty rather than as a free lie, and
+dragging beyond the longest club in the bag raises a warning instead of quietly simulating a
+shot nobody can hit.
 
 ## Trace — geometry
 
