@@ -7,7 +7,7 @@ that decides how much any of the modelling is worth.
 ```bash
 npm install
 npm run dev          # the app
-npm test             # 50 model tests, no browser needed
+npm test             # 66 model tests, no browser needed
 npx vite-node scripts/inspect.ts      # what the optimizer says about the demo hole
 npx vite-node scripts/sensitivity.ts  # how much the answer moves when the inputs move
 ```
@@ -32,6 +32,12 @@ Drag the crosshair (or tap the map) and you get two numbers, deliberately side b
 The first layer is a lookup and answers *what is this spot worth*. It is honest and it is
 free. What it cannot do is tell you where to aim, because it prices every target as though
 you hit it perfectly — so the pin always wins.
+
+Both yardages are drawn on the map itself — ball-to-target and target-to-pin — not only in the
+panel, because standing over the ball you want "how far am I hitting it" and "what's left in"
+without looking away from the hole. The opening target is down the centreline at your longest
+club rather than at the pin: defaulting to the pin on a 400-yard hole asks the model to
+simulate a shot nobody can hit.
 
 The gap between the two layers is the whole argument. On the demo hole, dragging to the pin
 from the tee reads **+2.45** perfect and **+0.35** realistic: a two-stroke divergence, and
@@ -73,6 +79,18 @@ makes it implicit, so anything untraced resolves to rough and tracing it is wast
 Each polygon carries the `penalty_modifier` local-knowledge field, because a flat fairway
 bunker and a lipped-out greenside bunker are both `bunker` and differ by most of a stroke.
 
+**Import from OpenStreetMap** is spec §9's second path, and it stays second on purpose: coverage
+is patchy and private clubs are systematically the gap. Search by name, or hit "I'm at the
+course" and it queries Overpass around your GPS fix. `golf=hole` ways are the skeleton — each
+carries the hole number and usually the par, and its geometry is the centreline, so its first
+point is the tee and its last is the green. Every polygon is then assigned to the nearest
+centreline, because OSM polygons rarely say which hole they belong to.
+
+It reports what it found rather than presenting it as surveyed: features per hole, anything
+dropped for sitting more than 200y from every centreline, holes that had no par tag, and — per
+§9's bimodal-coverage warning — a plain statement when under two features per hole means the
+course came back as an undifferentiated blob and you should trace it.
+
 Courses export and import as JSON. KML (spec §9) is not built yet.
 
 Imagery defaults to **NAIP** — public domain, no attribution requirement, no restriction on
@@ -84,6 +102,12 @@ course record carries an imagery-vintage note.
 ## Bag — where the numbers come from
 
 Two sources, in priority order.
+
+**Your clubs.** The bag is user-defined — add, rename, remove, set carries, mark clubs in or
+out. Nobody carries the same fourteen, and a fixed list does worse than look wrong: each club
+also carries a *family*, and family is what decides whose logged shots pool with whose when a
+club has too few of its own. A hardcoded list silently mispools every club you do not happen
+to own.
 
 **Logged shots.** Every shot is stored as two dimensionless numbers: the ratio of actual to
 intended distance, and the offline angle. Dimensionless is what lets a shot logged at 150

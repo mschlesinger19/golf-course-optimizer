@@ -3,10 +3,10 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { centerlineYardage, isPlayable, projectHole, type GeoCourse } from '../model/course';
 import { makeNoiseBank } from '../model/dispersion';
 import { PROVISIONAL_BASELINE } from '../model/expectedStrokes';
-import { compileHole, resolveLie } from '../model/geometry';
+import { compileHole, pointAlongPolyline, resolveLie } from '../model/geometry';
 import { evaluateTarget, OUTCOMES, suggestClub, type Outcome } from '../model/optimizer';
 import { rotateDeg } from '../model/geometry';
-import type { LatLng } from '../model/projection';
+import { distanceYards, type LatLng } from '../model/projection';
 import type { Lie, Point } from '../model/types';
 import { buildPattern, measureShot, type Shot } from '../model/shots';
 import type { Profile } from '../store/profile';
@@ -102,6 +102,9 @@ export function Play({
   const targetMarkerRef = useRef<L.Marker | null>(null);
   const ballMarkerRef = useRef<L.CircleMarker | null>(null);
   const aimLineRef = useRef<L.Polyline | null>(null);
+  const pinLineRef = useRef<L.Polyline | null>(null);
+  const outLabelRef = useRef<L.Marker | null>(null);
+  const inLabelRef = useRef<L.Marker | null>(null);
   const draggingRef = useRef(false);
   // The crosshair is built once, so its drag handler would otherwise close over
   // the ball position from first render.
@@ -109,11 +112,36 @@ export function Play({
   ballRef.current = ball;
 
   // Reset ball and target when the hole changes.
+  //
+  // The opening target is down the centreline at the longest club in the bag,
+  // not the pin. Defaulting to the pin on a 400-yard hole asks the model to
+  // simulate a shot nobody can hit, so the first thing you see is a miss
+  // pattern the width of the hole and an out-of-range warning -- which reads as
+  // the app being broken rather than as the honest answer to a silly question.
   useEffect(() => {
     if (!hole?.tee) return;
     setBall(hole.tee);
-    setTarget(hole.pin ?? hole.green ?? hole.tee);
-  }, [hole?.id, hole?.tee, hole?.pin, hole?.green]);
+    const projectedHole = projectHole(hole);
+    const pin = hole.pin ?? hole.green ?? hole.tee;
+    if (!projectedHole) {
+      setTarget(pin);
+      return;
+    }
+    const reach = Math.max(
+      60,
+      ...bag.filter((c) => c.inBag).map((c) => c.meanCarry + c.rollFairway),
+    );
+    const toPin = Math.hypot(
+      projectedHole.hole.pin.x - projectedHole.hole.teePoint.x,
+      projectedHole.hole.pin.y - projectedHole.hole.teePoint.y,
+    );
+    if (toPin <= reach) {
+      setTarget(pin);
+      return;
+    }
+    const local = pointAlongPolyline(projectedHole.hole.centerline, reach);
+    setTarget(projectedHole.projector.toLatLng(local));
+  }, [hole?.id, hole?.tee, hole?.pin, hole?.green, bag]);
 
   const projected = useMemo(() => (hole ? projectHole(hole) : null), [hole]);
   const compiled = useMemo(() => (projected ? compileHole(projected.hole) : null), [projected]);
@@ -130,7 +158,7 @@ export function Play({
     const distance = Math.hypot(targetP.x - startP.x, targetP.y - startP.y);
     const club =
       clubId === 'auto' ? suggestClub(bag, distance) : bag.find((c) => c.id === clubId);
-    const pattern = club ? buildPattern(profile.shots, club.id) : undefined;
+    const pattern = club ? buildPattern(profile.shots, club, bag) : undefined;
     // Nothing stops you dragging the crosshair 380 yards, but simulating a
     // shot no club in the bag can hit produces a confident number about an
     // impossible shot -- exactly the failure mode the provisional baselines
@@ -291,6 +319,54 @@ export function Play({
       }).addTo(chrome);
     }
 
+    // Both yardages belong on the map, not only in the panel: standing over the
+    // ball you want "how far am I hitting it" and "what's left in" without
+    // looking away from the hole.
+    const pin = hole?.pin ?? hole?.green ?? null;
+    if (pin) {
+      const inLeg: [number, number][] = [
+        [target.lat, target.lng],
+        [pin.lat, pin.lng],
+      ];
+      if (pinLineRef.current) pinLineRef.current.setLatLngs(inLeg);
+      else {
+        pinLineRef.current = L.polyline(inLeg, {
+          color: '#ffffff',
+          weight: 1.5,
+          opacity: 0.55,
+          dashArray: '5 5',
+        }).addTo(chrome);
+      }
+    }
+
+    const mid = (a: LatLng, b: LatLng): [number, number] => [
+      (a.lat + b.lat) / 2,
+      (a.lng + b.lng) / 2,
+    ];
+    const yardLabel = (
+      ref: React.MutableRefObject<L.Marker | null>,
+      at: [number, number],
+      text: string,
+      variant: string,
+    ) => {
+      const html = `<div class="yard-label ${variant}">${text}</div>`;
+      if (ref.current) {
+        ref.current.setLatLng(at);
+        const el = ref.current.getElement();
+        if (el) el.innerHTML = html;
+      } else {
+        ref.current = L.marker(at, {
+          interactive: false,
+          icon: L.divIcon({ className: 'yard-label-icon', html, iconSize: [88, 22], iconAnchor: [44, 11] }),
+        }).addTo(chrome);
+      }
+    };
+
+    yardLabel(outLabelRef, mid(ball, target), `${distanceYards(ball, target).toFixed(0)}y`, 'out');
+    if (pin) {
+      yardLabel(inLabelRef, mid(target, pin), `${distanceYards(target, pin).toFixed(0)}y in`, 'in');
+    }
+
     if (ballMarkerRef.current) ballMarkerRef.current.setLatLng([ball.lat, ball.lng]);
     else {
       ballMarkerRef.current = L.circleMarker([ball.lat, ball.lng], {
@@ -336,7 +412,7 @@ export function Play({
       // somewhere else, such as a map tap or a hole switch.
       targetMarkerRef.current.setLatLng([target.lat, target.lng]);
     }
-  }, [ball, target]);
+  }, [ball, target, hole?.pin, hole?.green]);
 
   /**
    * Second tap: where the ball finished. Stores the shot as a ratio and an

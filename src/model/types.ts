@@ -78,9 +78,21 @@ export interface Hole {
  * pooling is implemented here -- this slice takes the parameters directly
  * from the sliders.
  */
+export type ClubFamily =
+  | 'driver'
+  | 'wood'
+  | 'hybrid'
+  | 'long_iron'
+  | 'mid_iron'
+  | 'short_iron'
+  | 'wedge'
+  | 'putter';
+
 export interface ClubParams {
   id: string;
   name: string;
+  /** Spec 3.3's family, used to pool logged shots between neighbouring clubs. */
+  family: ClubFamily;
   /** Mean carry in yards for the normal (non-mishit) component. */
   meanCarry: number;
   /** Longitudinal sigma as a fraction of carry. */

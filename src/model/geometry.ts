@@ -112,6 +112,10 @@ const LIE_PRIORITY: FeatureType[] = [
   'green',
   'fairway',
   'tee',
+  // Explicit rough must be listed, and listed last. An unlisted type indexes to
+  // -1 and would sort ahead of everything, so a traced or imported rough
+  // polygon would outrank the water sitting inside it.
+  'rough',
 ];
 
 export interface CompiledHole {

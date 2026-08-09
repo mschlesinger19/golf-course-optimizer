@@ -27,6 +27,7 @@ export const DEFAULT_BAG: ClubParams[] = [
   {
     id: 'driver',
     name: 'Driver',
+    family: 'driver',
     meanCarry: 245,
     carrySigmaPct: 0.055,
     lateralSigmaPct: 0.075,
@@ -41,6 +42,7 @@ export const DEFAULT_BAG: ClubParams[] = [
   {
     id: '3w',
     name: '3-wood',
+    family: 'wood',
     meanCarry: 220,
     carrySigmaPct: 0.05,
     lateralSigmaPct: 0.065,
@@ -55,6 +57,7 @@ export const DEFAULT_BAG: ClubParams[] = [
   {
     id: '5w',
     name: '5-wood',
+    family: 'wood',
     meanCarry: 202,
     carrySigmaPct: 0.048,
     lateralSigmaPct: 0.06,
@@ -69,6 +72,7 @@ export const DEFAULT_BAG: ClubParams[] = [
   {
     id: '4i',
     name: '4-iron',
+    family: 'long_iron',
     meanCarry: 185,
     carrySigmaPct: 0.048,
     lateralSigmaPct: 0.057,
@@ -83,6 +87,7 @@ export const DEFAULT_BAG: ClubParams[] = [
   {
     id: '6i',
     name: '6-iron',
+    family: 'mid_iron',
     meanCarry: 165,
     carrySigmaPct: 0.045,
     lateralSigmaPct: 0.053,

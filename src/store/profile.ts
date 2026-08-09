@@ -1,6 +1,6 @@
 import { DEFAULT_QUESTIONNAIRE, deriveBag, type Questionnaire } from '../model/questionnaire';
 import type { Shot } from '../model/shots';
-import type { ClubParams } from '../model/types';
+import type { ClubFamily, ClubParams } from '../model/types';
 
 /**
  * The player: their questionnaire answers, the bag derived from them, and
@@ -20,6 +20,25 @@ function fallback(): Profile {
   return { questionnaire: null, bag: deriveBag(DEFAULT_QUESTIONNAIRE).clubs, shots: [] };
 }
 
+/**
+ * Bags stored before clubs carried a family need one, or pooling silently
+ * stops finding neighbours. Infer it from carry, which is the only signal a
+ * legacy record has.
+ */
+function familyFromCarry(carry: number): ClubFamily {
+  if (carry >= 235) return 'driver';
+  if (carry >= 205) return 'wood';
+  if (carry >= 190) return 'hybrid';
+  if (carry >= 175) return 'long_iron';
+  if (carry >= 150) return 'mid_iron';
+  if (carry >= 128) return 'short_iron';
+  return 'wedge';
+}
+
+function migrateClub(c: ClubParams): ClubParams {
+  return c.family ? c : { ...c, family: familyFromCarry(c.meanCarry) };
+}
+
 export function loadProfile(): Profile {
   try {
     const raw = localStorage.getItem(KEY);
@@ -27,7 +46,7 @@ export function loadProfile(): Profile {
     const parsed = JSON.parse(raw) as Partial<Profile>;
     return {
       questionnaire: parsed.questionnaire ?? null,
-      bag: parsed.bag?.length ? parsed.bag : fallback().bag,
+      bag: parsed.bag?.length ? parsed.bag.map(migrateClub) : fallback().bag,
       shots: parsed.shots ?? [],
     };
   } catch {
